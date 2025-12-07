@@ -1,0 +1,57 @@
+---
+- name: Install Clickhouse (official method)
+  hosts: clickhouse
+  become: true
+  
+  tasks:
+    - name: Install dependencies
+      ansible.builtin.apt:
+        name:
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: true
+    
+    - name: Download and run Clickhouse install script
+      ansible.builtin.shell: |
+        curl -s https://clickhouse.com/ | sh
+      args:
+        creates: /usr/bin/clickhouse-client
+      tags: clickhouse
+    
+    - name: Start clickhouse-server
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: started
+        enabled: true
+      tags: clickhouse
+    
+    - name: Wait for Clickhouse to be ready
+      ansible.builtin.wait_for:
+        port: 8123
+        delay: 5
+        timeout: 60
+      tags: clickhouse
+    
+    - name: Create logs database
+      ansible.builtin.shell: |
+        clickhouse-client -q 'create database if not exists logs;'
+      register: create_db
+      changed_when: create_db.stdout == ""
+      tags: clickhouse
+    
+    - name: Create logs table
+      ansible.builtin.shell: |
+        clickhouse-client -q "
+        CREATE TABLE IF NOT EXISTS logs.system_logs (
+          timestamp DateTime,
+          host String,
+          facility String,
+          severity String,
+          message String
+        ) ENGINE = MergeTree()
+        ORDER BY (timestamp, host)
+        PARTITION BY toYYYYMM(timestamp);
+        "
+      tags: clickhouse

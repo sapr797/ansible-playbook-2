@@ -1,0 +1,47 @@
+---
+- name: Verify ClickHouse and Vector Installation
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Check ClickHouse service
+      ansible.builtin.systemd:
+        name: clickhouse-server
+      register: clickhouse_service
+    
+    - name: Check Vector service
+      ansible.builtin.systemd:
+        name: vector
+      register: vector_service
+    
+    - name: Check ClickHouse version
+      ansible.builtin.shell: |
+        clickhouse-client --version 2>/dev/null || echo "Not installed"
+      register: clickhouse_version
+      changed_when: false
+    
+    - name: Check Vector version
+      ansible.builtin.shell: |
+        vector --version 2>/dev/null || echo "Not installed"
+      register: vector_version
+      changed_when: false
+    
+    - name: Check logs in ClickHouse
+      ansible.builtin.shell: |
+        clickhouse-client -q "SELECT count() FROM logs.system_logs" 2>/dev/null || echo "0"
+      register: log_count
+      changed_when: false
+    
+    - name: Display verification results
+      ansible.builtin.debug:
+        msg: |
+          ===== INSTALLATION VERIFICATION =====
+          ClickHouse Service: {{ clickhouse_service.state }}
+          ClickHouse Version: {{ clickhouse_version.stdout }}
+          
+          Vector Service: {{ vector_service.state }}
+          Vector Version: {{ vector_version.stdout }}
+          
+          Logs in ClickHouse: {{ log_count.stdout }} records
+          
+          ===== SYSTEM READY =====

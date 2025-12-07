@@ -1,0 +1,47 @@
+---
+- name: Install ClickHouse
+  hosts: clickhouse
+  become: true
+
+  vars:
+    clickhouse_version: "22.3.3.44"
+
+  handlers:
+    - name: restart clickhouse
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: restarted
+
+  tasks:
+    - name: Get clickhouse distrib
+      ansible.builtin.get_url:
+        url: "https://packages.clickhouse.com/rpm/stable/clickhouse-common-static-{{ clickhouse_version }}.x86_64.rpm"
+        dest: "/tmp/clickhouse-common-static-{{ clickhouse_version }}.rpm"
+        mode: '0644'
+
+    - name: Install clickhouse package
+      ansible.builtin.yum:
+        name:
+          - "/tmp/clickhouse-common-static-{{ clickhouse_version }}.rpm"
+        state: present
+      notify: restart clickhouse
+
+    - name: Flush handlers
+      meta: flush_handlers
+
+    - name: Start clickhouse service
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: started
+        enabled: yes
+
+    - name: Create database
+      community.general.clickhouse:
+        login_host: "{{ ansible_default_ipv4.address }}"
+        login_port: 8123
+        query: "CREATE DATABASE IF NOT EXISTS logs"
+
+    - name: Wait for ClickHouse to start
+      ansible.builtin.wait_for:
+        port: 8123
+        delay: 10

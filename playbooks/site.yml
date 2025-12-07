@@ -1,0 +1,118 @@
+---
+- name: Install Clickhouse (using official method)
+  hosts: clickhouse
+  become: true
+  
+  handlers:
+    - name: Start clickhouse service
+      become: true
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: restarted
+  
+  tasks:
+    - name: Install Clickhouse using official script
+      ansible.builtin.shell: |
+        curl -s https://clickhouse.com/ | sh
+      args:
+        creates: /usr/bin/clickhouse-client
+      tags: clickhouse
+    
+    - name: Start clickhouse-server
+      become: true
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: started
+        enabled: true
+      tags: clickhouse
+    
+    - name: Create logs database
+      ansible.builtin.shell: |
+        clickhouse-client -q 'create database if not exists logs;'
+      register: create_db
+      failed_when: create_db.rc != 0 and create_db.rc != 82
+      changed_when: create_db.rc == 0
+      tags: clickhouse
+
+- name: Install Vector
+  hosts: vector
+  
+  vars:
+    vector_version: "0.23.0"
+    vector_install_dir: "/opt/vector"
+    
+  handlers:
+    - name: Restart Vector
+      become: true
+      ansible.builtin.service:
+        name: vector
+        state: restarted
+  
+  tasks:
+    - name: Download Vector
+      ansible.builtin.get_url:
+        url: "https://packages.timber.io/vector/{{ vector_version }}/vector-{{ vector_version }}-x86_64-unknown-linux-musl.tar.gz"
+        dest: "/tmp/vector-{{ vector_version }}.tar.gz"
+        mode: '0644'
+      tags: vector
+      
+    - name: Create Vector directory
+      become: true
+      ansible.builtin.file:
+        path: "{{ vector_install_dir }}"
+        state: directory
+        mode: '0755'
+      tags: vector
+      
+    - name: Extract Vector
+      become: true
+      ansible.builtin.unarchive:
+        src: "/tmp/vector-{{ vector_version }}.tar.gz"
+        dest: "{{ vector_install_dir }}"
+        remote_src: true
+        extra_opts: ["--strip-components=2"]
+        creates: "{{ vector_install_dir }}/bin/vector"
+      tags: vector
+      
+    - name: Install Vector binary
+      become: true
+      ansible.builtin.copy:
+        src: "{{ vector_install_dir }}/bin/vector"
+        dest: /usr/bin/vector
+        mode: '0755'
+        remote_src: true
+      tags: vector
+      
+    - name: Create Vector config directory
+      become: true
+      ansible.builtin.file:
+        path: /etc/vector
+        state: directory
+        mode: '0755'
+      tags: vector
+      
+    - name: Deploy Vector config
+      become: true
+      ansible.builtin.template:
+        src: "../templates/vector.yaml.j2"
+        dest: /etc/vector/vector.yaml
+        mode: '0644'
+      notify: Restart Vector
+      tags: vector
+      
+    - name: Create systemd service for Vector
+      become: true
+      ansible.builtin.template:
+        src: "../templates/vector.service.j2"
+        dest: /etc/systemd/system/vector.service
+        mode: '0644'
+      notify: Restart Vector
+      tags: vector
+      
+    - name: Start Vector service
+      become: true
+      ansible.builtin.service:
+        name: vector
+        state: started
+        enabled: true
+      tags: vector

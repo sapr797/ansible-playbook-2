@@ -1,0 +1,25 @@
+# Vector configuration for collecting logs
+sources:
+  system_logs:
+    type: file
+    include:
+      - /var/log/syslog
+      - /var/log/auth.log
+    read_from: beginning
+
+sinks:
+  clickhouse_output:
+    type: clickhouse
+    inputs:
+      - system_logs
+    database: logs
+    table: system_logs
+    endpoint: http://{{ clickhouse_host | default('localhost') }}:8123
+    compression: gzip
+    auth:
+      strategy: basic
+      user: {{ clickhouse_user | default('default') }}
+      password: {{ clickhouse_password | default('') }}
+
+    encoding:
+      codec: json
